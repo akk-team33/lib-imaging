@@ -27,7 +27,7 @@ public class RGBImage {
             rMin = Integer.MAX_VALUE, gMin = Integer.MAX_VALUE, bMin = Integer.MAX_VALUE,
             rMax = 0, gMax = 0, bMax = 0;
 
-    private RGBImage(final int width, final int height, final int type, final PixelSupplier supplier) {
+    private RGBImage(final int width, final int height, final int type, final PixelFunction function) {
         this.width = width;
         this.height = height;
         this.type = type;
@@ -38,9 +38,9 @@ public class RGBImage {
         final ExecutorService service = Executors.newWorkStealingPool();
         for (int y = 0; (y < height) && errorHandler.isClean(); ++y) {
 //            for (int x = 0; x < width; ++x) {
-//                setPixel(x, y, supplier.supply(x, y));
+//                setPixel(x, y, function.apply(x, y));
 //            }
-            service.execute(new LineWise(y, supplier, errorHandler));
+            service.execute(new LineWise(y, function, errorHandler));
             if (0 == (y % 64)) {
                 System.out.print('.');
             }
@@ -164,8 +164,8 @@ public class RGBImage {
     }
 
     @FunctionalInterface
-    private interface PixelSupplier {
-        RGBPixel supply(int x, int y);
+    private interface PixelFunction {
+        RGBPixel apply(int x, int y);
     }
 
     @FunctionalInterface
@@ -173,7 +173,8 @@ public class RGBImage {
         Point point(int x, int y, int delta);
     }
 
-    private static class Normalizing implements PixelSupplier {
+    private static class Normalizing implements PixelFunction
+    {
         private final RGBImage origin;
 
         private Normalizing(final RGBImage origin) {
@@ -181,7 +182,7 @@ public class RGBImage {
         }
 
         @Override
-        public final RGBPixel supply(final int x, final int y) {
+        public final RGBPixel apply(final int x, final int y) {
             final RGBPixel pixel = origin.getPixel(x, y);
             return new RGBPixel(
                     RGBPixel.normal(pixel.getRed(), origin.rMin, origin.rMax),
@@ -191,7 +192,8 @@ public class RGBImage {
         }
     }
 
-    private static class Blurring implements PixelSupplier {
+    private static class Blurring implements PixelFunction
+    {
         private final RGBImage origin;
         private final Direction direction;
         private final Dispersion dispersion;
@@ -203,7 +205,7 @@ public class RGBImage {
         }
 
         @Override
-        public final RGBPixel supply(final int x, final int y) {
+        public final RGBPixel apply(final int x, final int y) {
             final RGBPixel.Builder builder = RGBPixel.builder();
             for (int distance = dispersion.getMinDistance(), limit = dispersion.getEffectiveRadius();
                  distance <= limit; ++distance) {
@@ -240,10 +242,10 @@ public class RGBImage {
 
     private class LineWise implements Runnable {
         private final int y;
-        private final PixelSupplier supplier;
+        private final PixelFunction supplier;
         private final Consumer<Throwable> errorHandler;
 
-        private LineWise(final int y, final PixelSupplier supplier, final Consumer<Throwable> errorHandler) {
+        private LineWise(final int y, final PixelFunction supplier, final Consumer<Throwable> errorHandler) {
             this.y = y;
             this.supplier = supplier;
             this.errorHandler = errorHandler;
@@ -253,7 +255,7 @@ public class RGBImage {
         public final void run() {
             try {
                 for (int x = 0; x < width; ++x) {
-                    setPixel(x, y, supplier.supply(x, y));
+                    setPixel(x, y, supplier.apply(x, y));
                 }
             } catch (final Throwable e) {
                 errorHandler.accept(e);
@@ -261,7 +263,8 @@ public class RGBImage {
         }
     }
 
-    private class Enhancing implements PixelSupplier {
+    private class Enhancing implements PixelFunction
+    {
         private final RGBImage sharp;
         private final RGBImage blurred;
 
@@ -271,12 +274,13 @@ public class RGBImage {
         }
 
         @Override
-        public final RGBPixel supply(final int x, final int y) {
+        public final RGBPixel apply(final int x, final int y) {
             return RGBPixel.enhanced(sharp.getPixel(x, y), blurred.getPixel(x, y));
         }
     }
 
-    private class Smoothing implements PixelSupplier {
+    private class Smoothing implements PixelFunction
+    {
         private final RGBImage sharp;
         private final RGBImage blurred;
 
@@ -286,7 +290,7 @@ public class RGBImage {
         }
 
         @Override
-        public final RGBPixel supply(final int x, final int y) {
+        public final RGBPixel apply(final int x, final int y) {
             return RGBPixel.smoothed(sharp.getPixel(x, y), blurred.getPixel(x, y));
         }
     }
